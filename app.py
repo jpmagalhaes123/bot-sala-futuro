@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # ← ADICIONE ESTA LINHA
+from flask_cors import CORS  
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -9,7 +9,7 @@ import os
 app = Flask(__name__)
 CORS(app)  # ← ADICIONE ESTA LINHA (ISSO RESOLVE O CORS!)
 
-@app.route('/login', methods=['POST', 'OPTIONS'])  # ← ADICIONE OPTIONS
+@app.route('/login', methods=['POST', 'OPTIONS']) 
 def login_sala_futuro():
     try:
         # Resposta para pré-requisições CORS
@@ -107,3 +107,4 @@ def health_check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
