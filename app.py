@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # ← ADICIONE ESTA LINHA
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -6,10 +7,19 @@ import time
 import os
 
 app = Flask(__name__)
+CORS(app)  # ← ADICIONE ESTA LINHA (ISSO RESOLVE O CORS!)
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'OPTIONS'])  # ← ADICIONE OPTIONS
 def login_sala_futuro():
     try:
+        # Resposta para pré-requisições CORS
+        if request.method == 'OPTIONS':
+            response = jsonify({"status": "ok"})
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            response.headers.add('Access-Control-Allow-Headers', '*')
+            response.headers.add('Access-Control-Allow-Methods', '*')
+            return response
+            
         # Receber dados do formulário
         data = request.json
         ra = data['ra']
@@ -27,11 +37,11 @@ def login_sala_futuro():
         
         driver = webdriver.Chrome(options=chrome_options)
         
-        # Fazer login
+        # Fazer login na plataforma oficial
         driver.get("https://saladofuturo.educacao.sp.gov.br")
         time.sleep(3)
         
-        # Preencher formulário (ajuste os seletores conforme necessário)
+        # Preencher formulário (ajuste os seletores se necessário)
         driver.find_element(By.ID, "ra").send_keys(ra)
         driver.find_element(By.ID, "digito").send_keys(digito)
         driver.find_element(By.ID, "estado").send_keys(estado)
@@ -45,6 +55,15 @@ def login_sala_futuro():
             # Capturar cookies para obter token
             cookies = driver.get_cookies()
             token_cookie = next((c for c in cookies if 'token' in c['name'] or 'auth' in c['name']), None)
+            
+            # Se não encontrou token, tenta capturar da localStorage
+            if not token_cookie:
+                try:
+                    token_js = driver.execute_script("return localStorage.getItem('token');")
+                    if token_js:
+                        token_cookie = {'value': token_js}
+                except:
+                    pass
             
             driver.quit()
             
@@ -60,11 +79,20 @@ def login_sala_futuro():
                     "message": "Login realizado mas token não encontrado"
                 })
         else:
+            # Capturar possível erro de login
+            page_source = driver.page_source
             driver.quit()
-            return jsonify({
-                "success": False,
-                "message": "Falha no login - verifique as credenciais"
-            })
+            
+            if "senha incorreta" in page_source.lower():
+                return jsonify({
+                    "success": False,
+                    "message": "Senha incorreta"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Falha no login - verifique as credenciais"
+                })
             
     except Exception as e:
         return jsonify({
