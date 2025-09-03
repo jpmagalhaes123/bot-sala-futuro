@@ -21,6 +21,7 @@ def verify_recaptcha(recaptcha_token):
     return result.get('success', False)
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def login_sala_futuro():
     try:
         if request.method == 'OPTIONS':
@@ -40,88 +41,97 @@ def login_sala_futuro():
                 "message": "Falha na verificação do reCAPTCHA. Tente novamente."
             })
         
-        # 2. FORMATAR user COMO A PLATAFORMA EXIGE
+        # 2. PRIMEIRO ACESSO PARA OBTER COOKIES
+        session = requests.Session()
+        login_page_url = "https://saladofuturo.educacao.sp.gov.br/login-alunos"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        }
+        
+        # Primeira requisição para obter cookies
+        print("Obtendo cookies iniciais...")
+        response = session.get(login_page_url, headers=headers)
+        
+        if response.status_code != 200:
+            return jsonify({
+                "success": False,
+                "message": f"Erro ao acessar página de login: {response.status_code}"
+            })
+        
+        # 3. FORMATA USER CORRETAMENTE
         user = f"{ra}{digito}{estado}"
         
-        # 3. URL DA API DE LOGIN 
+        # 4. TENTAR LOGIN COM COOKIES
         login_url = "https://saladofuturo.educacao.sp.gov.br/LoginCompletoToken"
-        
-        # 4. PAYLOAD CORRETO
         payload = {
             "user": user,
             "senha": senha
         }
         
-        headers = {
+        # Headers para JSON
+        headers.update({
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "application/json",
             "Origin": "https://saladofuturo.educacao.sp.gov.br",
-            "Referer": "https://saladofuturo.educacao.sp.gov.br/login-alunos"
-        }
+            "Referer": "https://saladofuturo.educacao.sp.gov.br/login-alunos",
+            "X-Requested-With": "XMLHttpRequest"
+        })
         
-        # 5. FAZER LOGIN NA API OFICIAL
-        response = requests.post(login_url, json=payload, headers=headers)
+        print(f"Tentando login com user: {user}")
+        response = session.post(login_url, json=payload, headers=headers)
         
-        # 6. DEBUG: LOGAR TUDO (você verá no Render)
+        # DEBUG CRUCIAL
         print(f"Status Code: {response.status_code}")
-        print(f"Response Text: {response.text[:500]}...")
-        print(f"Headers: {dict(response.headers)}")
-        print(f"Cookies: {dict(response.cookies)}")
+        print(f"Content-Type: {response.headers.get('Content-Type')}")
+        print(f"Response Sample: {response.text[:500]}...")
+        print(f"Cookies: {dict(session.cookies)}")
         
-        # 7. VERIFICAR RESPOSTA
+        # 5. ANALISAR RESPOSTA
         if response.status_code == 200:
-            # Verifica múltiplos indicadores de sucesso
-            response_lower = response.text.lower()
-            success_indicators = [
-                "token" in response_lower,
-                "dashboard" in response_lower,
-                "inicio" in response_lower, 
-                "success" in response_lower,
-                "redirect" in response_lower,
-                any('auth' in cookie.name.lower() for cookie in response.cookies),
-                any('token' in cookie.name.lower() for cookie in response.cookies)
-            ]
+            content_type = response.headers.get('Content-Type', '')
             
-            if any(success_indicators):
-                # Capturar token de várias fontes possíveis
-                token = None
-                
-                # Tentar do JSON
+            if 'application/json' in content_type:
+                # É JSON - provavelmente sucesso
                 try:
-                    json_data = response.json()
-                    token = json_data.get("token") or json_data.get("access_token")
+                    response_data = response.json()
+                    if "token" in response_data:
+                        return jsonify({
+                            "success": True,
+                            "message": "Login realizado com sucesso!",
+                            "token": response_data["token"],
+                            "data": response_data
+                        })
+                    else:
+                        return jsonify({
+                            "success": False,
+                            "message": "Login falhou - token não encontrado na resposta",
+                            "response": response_data
+                        })
                 except:
+                    # Não é JSON válido
                     pass
-                    
-                # Tentar dos cookies
-                if not token:
-                    for cookie in response.cookies:
-                        if 'token' in cookie.name.lower() or 'auth' in cookie.name.lower():
-                            token = cookie.value
-                            break
-                
-                # Tentar do header
-                if not token:
-                    auth_header = response.headers.get('Authorization', '')
-                    if 'bearer' in auth_header.lower():
-                        token = auth_header.replace('Bearer ', '').replace('bearer ', '')
-                
+            
+            # Se chegou aqui, é HTML ou resposta inesperada
+            if "dashboard" in response.text or "inicio" in response.text:
                 return jsonify({
                     "success": True,
-                    "message": "Login realizado com sucesso!",
-                    "token": token or "token_nao_encontrado_mas_login_ok",
-                    "status_code": response.status_code,
-                    "cookies": {c.name: c.value for c in response.cookies},
-                    "response_sample": response.text[:500] + "..." if len(response.text) > 500 else response.text
+                    "message": "Login realizado (redirecionamento detectado)",
+                    "response_sample": response.text[:500] + "..."
                 })
-            
-        # 8. SE CHEGOU AQUI, LOGIN FALHOU
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Resposta inesperada - página HTML retornada",
+                    "response_sample": response.text[:500] + "..."
+                })
+        
         return jsonify({
             "success": False,
-            "message": "Falha no login. Verifique suas credenciais.",
-            "status_code": response.status_code,
-            "response": response.text[:1000] + "..." if len(response.text) > 1000 else response.text
+            "message": f"Erro HTTP {response.status_code}",
+            "status_code": response.status_code
         })
             
     except Exception as e:
@@ -137,3 +147,4 @@ def health_check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
