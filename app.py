@@ -6,8 +6,8 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Configurações do reCAPTCHA (substitua com suas chaves)
-RECAPTCHA_SECRET_KEY = "SUA_SECRET_KEY_AQUI"
+# SUAS CHAVES reCAPTCHA (REAIS)
+RECAPTCHA_SECRET_KEY = "6LckPrwrAAAAAO836Q2t6ZSxgGkznWpYX_0eRJ5K"
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
 
 def verify_recaptcha(recaptcha_token):
