@@ -1,29 +1,30 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
 import os
 
 app = Flask(__name__)
 CORS(app)
 
-# SUAS CHAVES reCAPTCHA (REAIS)
-RECAPTCHA_SECRET_KEY = "6LckPrwrAAAAAO836Q2t6ZSxgGkznWpYX_0eRJ5K"
-RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
+# Configurações do Chrome para Render
+def setup_chrome_options():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Executar em background
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+    return chrome_options
 
-def verify_recaptcha(recaptcha_token):
-    """Verifica se o reCAPTCHA é válido"""
-    payload = {
-        'secret': RECAPTCHA_SECRET_KEY,
-        'response': recaptcha_token
-    }
-    response = requests.post(RECAPTCHA_VERIFY_URL, data=payload)
-    result = response.json()
-    return result.get('success', False)
-
-@app.route('/login', methods=['POST', 'OPTIONS'])
-@app.route('/login', methods=['POST', 'OPTIONS'])
 @app.route('/login', methods=['POST', 'OPTIONS'])
 def login_sala_futuro():
+    driver = None
     try:
         if request.method == 'OPTIONS':
             return jsonify({"status": "ok"})
@@ -33,68 +34,99 @@ def login_sala_futuro():
         digito = data['digito']
         estado = data['estado']
         senha = data['senha']
-        recaptcha_token = data.get('recaptcha_token', '')
         
-        # 1. VALIDAR CAPTCHA
-        if not verify_recaptcha(recaptcha_token):
+        # Configurar Chrome
+        chrome_options = setup_chrome_options()
+        driver = webdriver.Chrome(options=chrome_options)
+        
+        # 1. Acessar página de login
+        print("Acessando página de login...")
+        driver.get("https://saladofuturo.educacao.sp.gov.br/login-alunos")
+        time.sleep(3)
+        
+        # 2. Preencher formulário
+        print("Preenchendo formulário...")
+        
+        # Encontrar e preencher campos (ajuste os seletores se necessário)
+        ra_input = driver.find_element(By.ID, "ra")
+        digito_input = driver.find_element(By.ID, "digito")
+        estado_input = driver.find_element(By.ID, "estado")
+        senha_input = driver.find_element(By.ID, "senha")
+        
+        ra_input.send_keys(ra)
+        digito_input.send_keys(digito)
+        estado_input.send_keys(estado)
+        senha_input.send_keys(senha)
+        
+        # 3. Clicar no botão de login
+        print("Clicando no botão de login...")
+        login_button = driver.find_element(By.ID, "btn-login")
+        login_button.click()
+        
+        # 4. Aguardar redirecionamento
+        print("Aguardando redirecionamento...")
+        time.sleep(5)
+        
+        # 5. Verificar se login foi bem-sucedido
+        current_url = driver.current_url
+        print(f"URL atual: {current_url}")
+        
+        if "dashboard" in current_url or "inicio" in current_url:
+            # Login bem-sucedido - capturar token
+            print("Login bem-sucedido! Capturando token...")
+            
+            # Tentar capturar token de várias fontes
+            token = None
+            
+            # Dos cookies
+            cookies = driver.get_cookies()
+            for cookie in cookies:
+                if 'token' in cookie['name'].lower() or 'auth' in cookie['name'].lower():
+                    token = cookie['value']
+                    break
+            
+            # Da localStorage
+            if not token:
+                try:
+                    token = driver.execute_script("return localStorage.getItem('token');")
+                except:
+                    pass
+            
+            # Da sessionStorage
+            if not token:
+                try:
+                    token = driver.execute_script("return sessionStorage.getItem('token');")
+                except:
+                    pass
+            
+            driver.quit()
+            
             return jsonify({
-                "success": False,
-                "message": "Falha na verificação do reCAPTCHA. Tente novamente."
+                "success": True,
+                "message": "Login realizado com sucesso!",
+                "token": token or "token_nao_encontrado_mas_login_ok",
+                "redirect_url": current_url
             })
-        
-        # 2. TESTAR DIFERENTES ENDPOINTS
-        endpoints = [
-            "https://saladofuturo.educacao.sp.gov.br/api/auth/login",
-            "https://saladofuturo.educacao.sp.gov.br/api/login",
-            "https://saladofuturo.educacao.sp.gov.br/auth/login",
-            "https://saladofuturo.educacao.sp.gov.br/LoginCompletoToken"
-        ]
-        
-        user = f"{ra}{digito}{estado}"
-        payload = {"user": user, "senha": senha}
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Origin": "https://saladofuturo.educacao.sp.gov.br",
-            "Referer": "https://saladofuturo.educacao.sp.gov.br/login-alunos",
-            "X-Requested-With": "XMLHttpRequest"
-        }
-        
-        # 3. TESTAR TODOS OS ENDPOINTS
-        for endpoint in endpoints:
-            try:
-                print(f"Testando endpoint: {endpoint}")
-                response = requests.post(endpoint, json=payload, headers=headers, timeout=10)
-                
-                print(f"Status: {response.status_code}")
-                print(f"Content-Type: {response.headers.get('Content-Type')}")
-                print(f"Response: {response.text[:200]}...")
-                
-                if response.status_code == 200 and 'application/json' in response.headers.get('Content-Type', ''):
-                    response_data = response.json()
-                    if "token" in response_data:
-                        return jsonify({
-                            "success": True,
-                            "message": f"Login via {endpoint}",
-                            "token": response_data["token"],
-                            "endpoint": endpoint
-                        })
-                
-            except Exception as e:
-                print(f"Erro no endpoint {endpoint}: {str(e)}")
-                continue
-        
-        # 4. SE NENHUM FUNCIONOU, RETORNAR ERRO
-        return jsonify({
-            "success": False,
-            "message": "Nenhum endpoint funcionou. A plataforma pode ter mudado a API.",
-            "user_format": user,
-            "tested_endpoints": endpoints
-        })
+        else:
+            # Login falhou
+            page_source = driver.page_source
+            driver.quit()
+            
+            if "senha incorreta" in page_source.lower():
+                return jsonify({
+                    "success": False,
+                    "message": "Senha incorreta"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "message": "Falha no login - verifique as credenciais",
+                    "current_url": current_url
+                })
             
     except Exception as e:
+        if driver:
+            driver.quit()
         return jsonify({
             "success": False,
             "message": f"Erro no processo: {str(e)}"
@@ -107,5 +139,3 @@ def health_check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
-
-
