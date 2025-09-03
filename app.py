@@ -43,10 +43,10 @@ def login_sala_futuro():
         # Configurar Chrome
         chrome_options = setup_chrome_options()
         from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.service import Service
 
-service = Service(ChromeDriverManager().install())
-driver = webdriver.Chrome(service=service, options=chrome_options)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         
         # Executar script para evitar detecção
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -179,4 +179,5 @@ def test_chrome():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
 
