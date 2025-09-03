@@ -22,6 +22,7 @@ def verify_recaptcha(recaptcha_token):
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
 @app.route('/login', methods=['POST', 'OPTIONS'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def login_sala_futuro():
     try:
         if request.method == 'OPTIONS':
@@ -41,97 +42,56 @@ def login_sala_futuro():
                 "message": "Falha na verificação do reCAPTCHA. Tente novamente."
             })
         
-        # 2. PRIMEIRO ACESSO PARA OBTER COOKIES
-        session = requests.Session()
-        login_page_url = "https://saladofuturo.educacao.sp.gov.br/login-alunos"
+        # 2. TESTAR DIFERENTES ENDPOINTS
+        endpoints = [
+            "https://saladofuturo.educacao.sp.gov.br/api/auth/login",
+            "https://saladofuturo.educacao.sp.gov.br/api/login",
+            "https://saladofuturo.educacao.sp.gov.br/auth/login",
+            "https://saladofuturo.educacao.sp.gov.br/LoginCompletoToken"
+        ]
+        
+        user = f"{ra}{digito}{estado}"
+        payload = {"user": user, "senha": senha}
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        }
-        
-        # Primeira requisição para obter cookies
-        print("Obtendo cookies iniciais...")
-        response = session.get(login_page_url, headers=headers)
-        
-        if response.status_code != 200:
-            return jsonify({
-                "success": False,
-                "message": f"Erro ao acessar página de login: {response.status_code}"
-            })
-        
-        # 3. FORMATA USER CORRETAMENTE
-        user = f"{ra}{digito}{estado}"
-        
-        # 4. TENTAR LOGIN COM COOKIES
-        login_url = "https://saladofuturo.educacao.sp.gov.br/LoginCompletoToken"
-        payload = {
-            "user": user,
-            "senha": senha
-        }
-        
-        # Headers para JSON
-        headers.update({
-            "Content-Type": "application/json",
             "Accept": "application/json",
+            "Content-Type": "application/json",
             "Origin": "https://saladofuturo.educacao.sp.gov.br",
             "Referer": "https://saladofuturo.educacao.sp.gov.br/login-alunos",
             "X-Requested-With": "XMLHttpRequest"
-        })
+        }
         
-        print(f"Tentando login com user: {user}")
-        response = session.post(login_url, json=payload, headers=headers)
-        
-        # DEBUG CRUCIAL
-        print(f"Status Code: {response.status_code}")
-        print(f"Content-Type: {response.headers.get('Content-Type')}")
-        print(f"Response Sample: {response.text[:500]}...")
-        print(f"Cookies: {dict(session.cookies)}")
-        
-        # 5. ANALISAR RESPOSTA
-        if response.status_code == 200:
-            content_type = response.headers.get('Content-Type', '')
-            
-            if 'application/json' in content_type:
-                # É JSON - provavelmente sucesso
-                try:
+        # 3. TESTAR TODOS OS ENDPOINTS
+        for endpoint in endpoints:
+            try:
+                print(f"Testando endpoint: {endpoint}")
+                response = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+                
+                print(f"Status: {response.status_code}")
+                print(f"Content-Type: {response.headers.get('Content-Type')}")
+                print(f"Response: {response.text[:200]}...")
+                
+                if response.status_code == 200 and 'application/json' in response.headers.get('Content-Type', ''):
                     response_data = response.json()
                     if "token" in response_data:
                         return jsonify({
                             "success": True,
-                            "message": "Login realizado com sucesso!",
+                            "message": f"Login via {endpoint}",
                             "token": response_data["token"],
-                            "data": response_data
+                            "endpoint": endpoint
                         })
-                    else:
-                        return jsonify({
-                            "success": False,
-                            "message": "Login falhou - token não encontrado na resposta",
-                            "response": response_data
-                        })
-                except:
-                    # Não é JSON válido
-                    pass
-            
-            # Se chegou aqui, é HTML ou resposta inesperada
-            if "dashboard" in response.text or "inicio" in response.text:
-                return jsonify({
-                    "success": True,
-                    "message": "Login realizado (redirecionamento detectado)",
-                    "response_sample": response.text[:500] + "..."
-                })
-            else:
-                return jsonify({
-                    "success": False,
-                    "message": "Resposta inesperada - página HTML retornada",
-                    "response_sample": response.text[:500] + "..."
-                })
+                
+            except Exception as e:
+                print(f"Erro no endpoint {endpoint}: {str(e)}")
+                continue
         
+        # 4. SE NENHUM FUNCIONOU, RETORNAR ERRO
         return jsonify({
             "success": False,
-            "message": f"Erro HTTP {response.status_code}",
-            "status_code": response.status_code
+            "message": "Nenhum endpoint funcionou. A plataforma pode ter mudado a API.",
+            "user_format": user,
+            "tested_endpoints": endpoints
         })
             
     except Exception as e:
@@ -147,4 +107,5 @@ def health_check():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
 
