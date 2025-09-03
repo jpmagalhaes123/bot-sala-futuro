@@ -3,8 +3,10 @@ from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 import time
 import os
 
@@ -35,9 +37,10 @@ def login_sala_futuro():
         estado = data['estado']
         senha = data['senha']
         
-        # Configurar Chrome
+        # Configurar Chrome com webdriver-manager
         chrome_options = setup_chrome_options()
-        driver = webdriver.Chrome(options=chrome_options)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         
         # 1. Acessar página de login
         print("Acessando página de login...")
@@ -47,8 +50,10 @@ def login_sala_futuro():
         # 2. Preencher formulário
         print("Preenchendo formulário...")
         
-        # Encontrar e preencher campos (ajuste os seletores se necessário)
-        ra_input = driver.find_element(By.ID, "ra")
+        # Usar WebDriverWait para esperar elementos - MUITO IMPORTANTE
+        wait = WebDriverWait(driver, 10)
+        
+        ra_input = wait.until(EC.presence_of_element_located((By.ID, "ra")))
         digito_input = driver.find_element(By.ID, "digito")
         estado_input = driver.find_element(By.ID, "estado")
         senha_input = driver.find_element(By.ID, "senha")
@@ -75,7 +80,7 @@ def login_sala_futuro():
             # Login bem-sucedido - capturar token
             print("Login bem-sucedido! Capturando token...")
             
-            # Tentar capturar token de várias fontes
+            # Tentar capturar token de várias fontes - ESSENCIAL
             token = None
             
             # Dos cookies
